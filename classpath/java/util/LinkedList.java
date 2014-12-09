@@ -412,30 +412,45 @@ public class LinkedList<T> extends AbstractSequentialList<T> implements Deque<T>
   private class MyIterator implements ListIterator<T> {
     private Cell<T> toRemove;
     private Cell<T> current;
+    private int index = -1;
 
     public T previous() {
       if (hasPrevious()) {
         T v = current.value;
         toRemove = current;
         current = current.prev;
+        index--;
         return v;
       } else {
         throw new NoSuchElementException();
       }
+    }
+    
+    public int previousIndex() {
+      if (index > -1) {
+        return index - 1;
+      }
+      return -1;
     }
 
     public T next() {
       if (hasNext()) {
         if (current == null) {
           current = front;
+          index = 0;
         } else {
           current = current.next;
+          index++;
         }
         toRemove = current;
         return current.value;
       } else {
         throw new NoSuchElementException();
       }
+    }
+    
+    public int nextIndex() {
+      return index + 1;
     }
 
     public boolean hasNext() {

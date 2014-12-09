@@ -10,6 +10,8 @@
 
 package java.io;
 
+import java.util.Arrays;
+
 public class PrintStream extends OutputStream {
   private final OutputStream out;
   private final boolean autoFlush;
@@ -145,5 +147,9 @@ public class PrintStream extends OutputStream {
     try {
       out.close();
     } catch (IOException e) { }
+  }
+  
+  public void printf(String format, Object... args) {
+	  print(format + ((args != null && args.length > 0) ? Arrays.asList(args) : ""));
   }
 }

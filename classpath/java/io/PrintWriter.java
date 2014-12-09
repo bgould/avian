@@ -10,6 +10,8 @@
 
 package java.io;
 
+import java.util.Arrays;
+
 public class PrintWriter extends Writer {
   private static final char[] newline
     = System.getProperty("line.separator").toCharArray();
@@ -86,5 +88,9 @@ public class PrintWriter extends Writer {
     try {
       out.close();
     } catch (IOException e) { }
+  }
+  
+  public void printf(String format, Object... args) {
+	  print(format + ((args != null && args.length > 0) ? Arrays.asList(args) : ""));
   }
 }

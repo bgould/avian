@@ -382,6 +382,10 @@ public class Collections {
     public boolean hasPrevious() {
       return index >= 0;
     }
+    
+    public int previousIndex() {
+    	return index - 1;
+    }
 
     public T previous() {
       if (hasPrevious()) {
@@ -399,6 +403,10 @@ public class Collections {
       } else {
         throw new NoSuchElementException();
       }
+    }
+    
+    public int nextIndex() {
+    	return index + 1;
     }
 
     public boolean hasNext() {
@@ -616,6 +624,16 @@ public class Collections {
     public T previous() {
       return innerListIterator.previous();
     }
+
+	@Override
+	public int nextIndex() {
+      return innerListIterator.nextIndex();
+	}
+
+	@Override
+	public int previousIndex() {
+      return innerListIterator.previousIndex();
+	}
   }
   
   static class UnmodifiableCollection<T> implements Collection<T> {

@@ -297,6 +297,10 @@ public class File implements Serializable {
       }
     }
   }
+  
+  public boolean deleteOnExit() {
+	  return false;
+  }
 
   public long lastModified() {
     return lastModified(path);
