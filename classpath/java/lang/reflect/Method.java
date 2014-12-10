@@ -52,7 +52,7 @@ public class Method<T> extends AccessibleObject implements Member {
   }
 
   public static String getName(VMMethod vmMethod) {
-    return new String(vmMethod.name, 0, vmMethod.name.length - 1, false);
+    return Classes.makeString(vmMethod.name, 0, vmMethod.name.length - 1);
   }
 
   private String getSpec() {
@@ -60,7 +60,7 @@ public class Method<T> extends AccessibleObject implements Member {
   }
 
   public static String getSpec(VMMethod vmMethod) {
-    return new String(vmMethod.spec, 0, vmMethod.spec.length - 1, false);
+    return Classes.makeString(vmMethod.spec, 0, vmMethod.spec.length - 1);
   }
 
   public Class[] getParameterTypes() {
@@ -107,8 +107,8 @@ public class Method<T> extends AccessibleObject implements Member {
       if (vmMethod.spec[i] == ')') {
         return Classes.forCanonicalName
           (vmMethod.class_.loader,
-           new String
-           (vmMethod.spec, i + 1, vmMethod.spec.length - i - 2, false));
+           Classes.makeString
+           (vmMethod.spec, i + 1, vmMethod.spec.length - i - 2));
       }
     }
     throw new RuntimeException();
@@ -146,11 +146,19 @@ public class Method<T> extends AccessibleObject implements Member {
   }
 
   public boolean isVarArgs() {
-    return (getModifiers() & 0x80) != 0;
+    return (getModifiers() & ACC_VARARGS) != 0;
+  }
+
+  public boolean isSynthetic() {
+    return (getModifiers() & ACC_SYNTHETIC) != 0;
   }
 
   public Object getDefaultValue() {
     ClassLoader loader = getDeclaringClass().getClassLoader();
     return Classes.getAnnotationDefaultValue(loader, vmMethod.addendum);
+  }
+
+  public Class<?>[] getExceptionTypes() {
+    throw new UnsupportedOperationException("not yet implemented");
   }
 }

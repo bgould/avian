@@ -18,27 +18,34 @@ import avian.Classes;
 import avian.InnerClassReference;
 
 import java.lang.reflect.Constructor;
+import java.lang.reflect.GenericDeclaration;
 import java.lang.reflect.Method;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
+import java.lang.reflect.TypeVariable;
 import java.lang.reflect.Proxy;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.SignatureParser;
 import java.lang.annotation.Annotation;
 import java.io.InputStream;
 import java.io.IOException;
 import java.net.URL;
 import java.util.Arrays;
+import java.util.List;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.Map;
 import java.util.HashMap;
 import java.security.ProtectionDomain;
 import java.security.Permissions;
 import java.security.AllPermission;
 
-public final class Class <T> implements Type, AnnotatedElement {
+public final class Class <T>
+  implements Type, AnnotatedElement, GenericDeclaration
+{
   private static final int PrimitiveFlag = 1 <<  5;
   private static final int EnumFlag      = 1 << 14;
 
@@ -49,7 +56,11 @@ public final class Class <T> implements Type, AnnotatedElement {
   }
 
   public String toString() {
-    return getName();
+    String res;
+    if (isInterface()) res = "interface ";
+    else if (isAnnotation()) res = "annotation ";
+    else res = "class ";
+    return res + getName();
   }
 
   private static byte[] replace(int a, int b, byte[] s, int offset,
@@ -96,9 +107,8 @@ public final class Class <T> implements Type, AnnotatedElement {
       }
     }
 
-    return new String
-      (replace('/', '.', c.name, 0, c.name.length - 1), 0, c.name.length - 1,
-       false);
+    return Classes.makeString
+      (replace('/', '.', c.name, 0, c.name.length - 1), 0, c.name.length - 1);
   }
 
   public String getCanonicalName() {
@@ -377,19 +387,18 @@ public final class Class <T> implements Type, AnnotatedElement {
   }
 
   public Class[] getInterfaces() {
-    if (vmClass.interfaceTable != null) {
-      Classes.link(vmClass);
-
-      int stride = (isInterface() ? 1 : 2);
-      Class[] array = new Class[vmClass.interfaceTable.length / stride];
-      for (int i = 0; i < array.length; ++i) {
-        array[i] = SystemClassLoader.getClass
-          ((VMClass) vmClass.interfaceTable[i * stride]);
+    ClassAddendum addendum = vmClass.addendum;
+    if (addendum != null) {
+      Object[] table = addendum.interfaceTable;
+      if (table != null) {
+        Class[] array = new Class[table.length];
+        for (int i = 0; i < table.length; ++i) {
+          array[i] = SystemClassLoader.getClass((VMClass) table[i]);
+        }
+        return array;
       }
-      return array;
-    } else {
-      return new Class[0];
     }
+    return new Class[0];
   }
 
   public native Class getEnclosingClass();
@@ -496,8 +505,57 @@ public final class Class <T> implements Type, AnnotatedElement {
     return (vmClass.flags & Modifier.INTERFACE) != 0;
   }
 
+  public boolean isAnnotation() {
+    return (vmClass.flags & 0x2000) != 0;
+  }
+
   public Class getSuperclass() {
     return (vmClass.super_ == null ? null : SystemClassLoader.getClass(vmClass.super_));
+  }
+  
+  private enum ClassType { GLOBAL, MEMBER, LOCAL, ANONYMOUS }
+  
+  /**
+    * Determines the class type.
+    * 
+    * There are four class types: global (no dollar sign), anonymous (only digits after the dollar sign),
+    * local (starts with digits after the dollar, ends in class name) and member (does not start with digits
+    * after the dollar sign).
+    * 
+    * @return the class type
+    */
+  private ClassType getClassType() {
+    final String name = getName();
+    // Find the last dollar, as classes can be nested
+    int dollar = name.lastIndexOf('$');
+    if (dollar < 0) return ClassType.GLOBAL;
+
+    // Find the first non-digit after the dollar, if any
+    final char[] chars = name.toCharArray();
+    int skipDigits;
+    for (skipDigits = dollar + 1; skipDigits < chars.length; skipDigits++) {
+       if (chars[skipDigits] < '0' || chars[skipDigits] > '9') break;
+    }
+
+    if (skipDigits == chars.length) {
+      return ClassType.ANONYMOUS;
+    } else if (skipDigits == dollar + 1) {
+      return ClassType.MEMBER;
+    } else {
+      return ClassType.LOCAL;
+    }
+  }
+    
+  public boolean isAnonymousClass () {
+    return getClassType() == ClassType.ANONYMOUS;
+  }
+  
+  public boolean isLocalClass () {
+    return getClassType() == ClassType.LOCAL;
+  }
+
+  public boolean isMemberClass () {
+    return getClassType() == ClassType.MEMBER;
   }
 
   public boolean isArray() {
@@ -522,9 +580,11 @@ public final class Class <T> implements Type, AnnotatedElement {
   }
 
   public URL getResource(String path) {
-    if (! path.startsWith("/")) {
-      String name = new String
-        (vmClass.name, 0, vmClass.name.length - 1, false);
+    if (path.startsWith("/")) {
+      path = path.substring(1);
+    } else {
+      String name = Classes.makeString
+        (vmClass.name, 0, vmClass.name.length - 1);
       int index = name.lastIndexOf('/');
       if (index >= 0) {
         path = name.substring(0, index) + "/" + path;
@@ -647,4 +707,85 @@ public final class Class <T> implements Type, AnnotatedElement {
   public ProtectionDomain getProtectionDomain() {
     return Classes.getProtectionDomain(vmClass);
   }
+
+  public TypeVariable<?>[] getTypeParameters() {
+    throw new UnsupportedOperationException("not yet implemented");
+  }
+
+  /** 
+   * The first one is the superclass, the others are interfaces
+   **/
+  private String[] getGenericTypeSignatures() {
+    String signature = Classes.toString((byte[]) vmClass.addendum.signature);
+    final char[] signChars = signature.toCharArray();
+
+    // Addendum format:
+    // <generic args if present>LBaseClass;LIface1;LIface2;...
+    // We should split it
+    
+    int i = -1;
+    
+    // Passing the generic args
+    int angles = 0;
+    do {
+      i++;
+      if (signChars[i] == '<') angles ++;
+      else if (signChars[i] == '>') angles --;
+    } while (angles > 0);
+    if (signChars[i] == '>') i++;
+    
+    // Splitting types list
+    LinkedList<String> typeSigns = new LinkedList<String>();
+    StringBuilder curTypeSign = new StringBuilder();
+    for (; i < signChars.length; i++) {
+      // Counting braces
+      if (signChars[i] == '<') angles ++;
+      else if (signChars[i] == '>') angles --;
+      
+      // Appending character
+      curTypeSign.append(signChars[i]);
+
+      // Splitting
+      if (angles == 0 && signChars[i] == ';') {
+        typeSigns.add(curTypeSign.toString());
+        curTypeSign.setLength(0);
+      }
+    }
+    if (curTypeSign.length() > 0) typeSigns.add(curTypeSign.toString());
+
+    String[] res = new String[typeSigns.size()];
+    return typeSigns.toArray(res);
+  }
+
+  public Type[] getGenericInterfaces() {
+    if (vmClass.addendum == null || vmClass.addendum.signature == null) {
+      return getInterfaces();
+    }
+    
+    String[] typeSigns = getGenericTypeSignatures();
+    if (typeSigns.length < 1) {
+      throw new RuntimeException("Class signature doesn't contain any type");
+    }
+    
+    // Parsing types
+    Type[] res = new Type[typeSigns.length - 1];
+    for (int i = 0; i < typeSigns.length - 1; i++) {
+      res[i] = SignatureParser.parse(vmClass.loader, typeSigns[i + 1], this);
+    }
+    
+    return res;
+  }
+
+  public Type getGenericSuperclass() {
+    if (vmClass.addendum == null || vmClass.addendum.signature == null) {
+      return getSuperclass();
+    }
+    String[] typeSigns = getGenericTypeSignatures();
+    if (typeSigns.length < 1) {
+      throw new RuntimeException("Class signature doesn't contain any type");
+    }
+
+    return SignatureParser.parse(vmClass.loader, typeSigns[0], this);
+  }
+
 }

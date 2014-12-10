@@ -1441,6 +1441,7 @@ Classpath* makeClasspath(System* system,
                          const char* embedPrefix);
 
 typedef uint64_t(JNICALL* FastNativeFunction)(Thread*, GcMethod*, uintptr_t*);
+typedef void(JNICALL* FastVoidNativeFunction)(Thread*, GcMethod*, uintptr_t*);
 
 inline GcClass* objectClass(Thread*, object o)
 {
@@ -3198,6 +3199,8 @@ inline bool exceptionMatch(Thread* t, GcClass* type, GcThrowable* exception)
 }
 
 object intern(Thread* t, object s);
+
+object clone(Thread* t, object o);
 
 void walk(Thread* t, Heap::Walker* w, object o, unsigned start);
 

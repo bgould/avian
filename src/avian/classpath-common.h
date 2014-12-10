@@ -250,40 +250,6 @@ System::Library* loadLibrary(Thread* t,
   return lib;
 }
 
-object clone(Thread* t, object o)
-{
-  PROTECT(t, o);
-
-  GcClass* class_ = objectClass(t, o);
-  unsigned size = baseSize(t, o, class_) * BytesPerWord;
-  object clone;
-
-  if (class_->arrayElementSize()) {
-    clone = static_cast<object>(allocate(t, size, class_->objectMask()));
-    memcpy(clone, o, size);
-    // clear any object header flags:
-    setObjectClass(t, o, objectClass(t, o));
-  } else if (instanceOf(t, type(t, GcCloneable::Type), o)) {
-    clone = make(t, class_);
-    memcpy(reinterpret_cast<void**>(clone) + 1,
-           reinterpret_cast<void**>(o) + 1,
-           size - BytesPerWord);
-  } else {
-    GcByteArray* classNameSlash = objectClass(t, o)->name();
-    THREAD_RUNTIME_ARRAY(t, char, classNameDot, classNameSlash->length());
-    replace('/',
-            '.',
-            RUNTIME_ARRAY_BODY(classNameDot),
-            reinterpret_cast<char*>(classNameSlash->body().begin()));
-    throwNew(t,
-             GcCloneNotSupportedException::Type,
-             "%s",
-             RUNTIME_ARRAY_BODY(classNameDot));
-  }
-
-  return clone;
-}
-
 GcStackTraceElement* makeStackTraceElement(Thread* t, GcTraceElement* e)
 {
   PROTECT(t, e);
@@ -779,6 +745,116 @@ unsigned classModifiers(Thread* t, GcClass* c)
   }
 
   return c->flags();
+}
+
+object makeMethod(Thread* t, GcJclass* class_, int index)
+{
+  GcMethod* method = cast<GcMethod>(
+      t, cast<GcArray>(t, class_->vmClass()->methodTable())->body()[index]);
+  PROTECT(t, method);
+
+  GcClass* c
+      = resolveClass(t, roots(t)->bootLoader(), "java/lang/reflect/Method");
+  PROTECT(t, c);
+
+  object instance = makeNew(t, c);
+  PROTECT(t, instance);
+
+  GcMethod* constructor = resolveMethod(t, c, "<init>", "(Lavian/VMMethod;)V");
+
+  t->m->processor->invoke(t, constructor, instance, method);
+
+  if (method->name()->body()[0] == '<') {
+    object oldInstance = instance;
+
+    c = resolveClass(
+        t, roots(t)->bootLoader(), "java/lang/reflect/Constructor");
+
+    object instance = makeNew(t, c);
+
+    GcMethod* constructor
+        = resolveMethod(t, c, "<init>", "(Ljava/lang/Method;)V");
+
+    t->m->processor->invoke(t, constructor, instance, oldInstance);
+  }
+
+  return instance;
+}
+
+int64_t getPrimitive(Thread* t, object instance, int code, int offset)
+{
+  switch (code) {
+  case ByteField:
+    return fieldAtOffset<int8_t>(instance, offset);
+  case BooleanField:
+    return fieldAtOffset<uint8_t>(instance, offset);
+  case CharField:
+    return fieldAtOffset<uint16_t>(instance, offset);
+  case ShortField:
+    return fieldAtOffset<int16_t>(instance, offset);
+  case IntField:
+    return fieldAtOffset<int32_t>(instance, offset);
+  case LongField:
+    return fieldAtOffset<int64_t>(instance, offset);
+  case FloatField:
+    return fieldAtOffset<uint32_t>(instance, offset);
+  case DoubleField:
+    return fieldAtOffset<uint64_t>(instance, offset);
+  default:
+    abort(t);
+  }
+}
+
+void setPrimitive(Thread* t,
+                  object instance,
+                  int code,
+                  int offset,
+                  int64_t value)
+{
+  switch (code) {
+  case ByteField:
+    fieldAtOffset<int8_t>(instance, offset) = static_cast<int8_t>(value);
+    break;
+  case BooleanField:
+    fieldAtOffset<uint8_t>(instance, offset) = static_cast<uint8_t>(value);
+    break;
+  case CharField:
+    fieldAtOffset<uint16_t>(instance, offset) = static_cast<uint16_t>(value);
+    break;
+  case ShortField:
+    fieldAtOffset<int16_t>(instance, offset) = static_cast<int16_t>(value);
+    break;
+  case IntField:
+    fieldAtOffset<int32_t>(instance, offset) = static_cast<int32_t>(value);
+    break;
+  case LongField:
+    fieldAtOffset<int64_t>(instance, offset) = static_cast<int64_t>(value);
+    break;
+  case FloatField:
+    fieldAtOffset<uint32_t>(instance, offset) = static_cast<uint32_t>(value);
+    break;
+  case DoubleField:
+    fieldAtOffset<uint64_t>(instance, offset) = static_cast<uint64_t>(value);
+    break;
+  default:
+    abort(t);
+  }
+}
+
+int64_t invokeMethod(Thread* t, GcMethod* method, object instance, object args)
+{
+  THREAD_RESOURCE0(t, {
+    if (t->exception) {
+      GcThrowable* exception = t->exception;
+      t->exception = makeThrowable(
+          t, GcInvocationTargetException::Type, 0, 0, exception);
+    }
+  });
+
+  unsigned returnCode = method->returnCode();
+
+  return reinterpret_cast<int64_t>(translateInvokeResult(
+      t, returnCode, t->m->processor->invokeArray(t, method, instance, args)));
 }
 
 }  // namespace vm

@@ -98,15 +98,31 @@ public class Reflection {
     expect(1 == args.length);
     expect(args[0] == String.class);
   }
-
+  
   public static void throwOOME() {
     throw new OutOfMemoryError();
+  }
+
+  public static void classType() throws Exception {
+    // Class types
+    expect(!Reflection.class.isAnonymousClass());
+    expect(!Reflection.class.isLocalClass());
+    expect(!Reflection.class.isMemberClass());
+
+    expect(Reflection.Hello.class.isMemberClass());
+    
+    Cloneable anonymousLocal = new Cloneable() {};
+    expect(anonymousLocal.getClass().isAnonymousClass());
+    
+    class NamedLocal {}
+    expect(NamedLocal.class.isLocalClass());
   }
 
   public static void main(String[] args) throws Exception {
     innerClasses();
     annotations();
     genericType();
+    classType();
 
     Class system = Class.forName("java.lang.System");
     Field out = system.getDeclaredField("out");
@@ -257,6 +273,9 @@ public class Reflection {
     expect(Baz.class.getField("foo").getAnnotations().length == 0);
 
     expect(new Runnable() { public void run() { } }.getClass()
+           .getEnclosingClass().equals(Reflection.class));
+
+    expect(new Runnable() { public void run() { } }.getClass()
            .getEnclosingMethod().equals
            (Reflection.class.getMethod
             ("main", new Class[] { String[].class })));
@@ -269,6 +288,9 @@ public class Reflection {
     } catch (NoSuchMethodException e) {
       // cool
     }
+
+    expect(C.class.getInterfaces().length == 1);
+    expect(C.class.getInterfaces()[0].equals(B.class));
   }
 
   protected static class Baz {
@@ -307,5 +329,9 @@ interface A {
 }
 
 interface B extends A { }
+
+class C implements B {
+  public void foo() { }
+}
 
 @interface Ann { }

@@ -15,15 +15,20 @@
 #define __STDC_CONSTANT_MACROS
 #endif
 
+#ifndef __STDC_FORMAT_MACROS
+#define __STDC_FORMAT_MACROS
+#endif
+
 #include <new>
 
-#include "stdlib.h"
-#include "stdarg.h"
-#include "stddef.h"
-#include "string.h"
-#include "stdio.h"
+#include <stdlib.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <string.h>
+#include <stdio.h>
+#include <inttypes.h>
 #include "avian/types.h"
-#include "math.h"
+#include <math.h>
 
 #ifdef UNUSED
 #undef UNUSED
@@ -31,7 +36,7 @@
 
 #ifdef _MSC_VER
 
-#include "float.h"
+#include <float.h>
 #include <stdint.h>
 
 #ifdef linux
@@ -111,6 +116,8 @@ typedef intptr_t intptr_alias_t;
 #define ARCH_x86_64
 #elif defined __arm__
 #define ARCH_arm
+#elif defined __aarch64__
+#define ARCH_arm64
 #else
 #error "unsupported architecture"
 #endif
@@ -132,10 +139,16 @@ typedef intptr_t __attribute__((__may_alias__)) intptr_alias_t;
 #define PATH_SEPARATOR ':'
 #endif  // not PLATFORM_WINDOWS
 
+#ifdef PRId64
+#define LLD PRId64
+#define ULD PRIu64
+#define LD PRIdPTR
+#define LX PRIxPTR
+#else
 #if (defined ARCH_x86_32) || (defined ARCH_arm)
 #define LD "ld"
 #if (defined _MSC_VER) || ((defined __MINGW32__) && __GNUC__ >= 4)
-#if (__GNUC__ == 4 && __GNUC_MINOR__ < 8)
+#if (__GNUC__ == 4 && __GNUC_MINOR__ <= 8)
 #define LLD "I64d"
 #else
 #define LLD "lld"
@@ -154,7 +167,7 @@ typedef intptr_t __attribute__((__may_alias__)) intptr_alias_t;
 #define LD "ld"
 #define LX "lx"
 #if (defined _MSC_VER) || (defined __MINGW32__)
-#if (__GNUC__ == 4 && __GNUC_MINOR__ < 8)
+#if (__GNUC__ == 4 && __GNUC_MINOR__ <= 8)
 #define LLD "I64d"
 #define ULD "I64x"
 #else
@@ -171,6 +184,7 @@ typedef intptr_t __attribute__((__may_alias__)) intptr_alias_t;
 #endif
 #else
 #error "Unsupported architecture"
+#endif
 #endif
 
 #ifdef PLATFORM_WINDOWS

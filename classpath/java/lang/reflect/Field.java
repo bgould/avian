@@ -17,7 +17,7 @@ import avian.Classes;
 
 import java.lang.annotation.Annotation;
 
-public class Field<T> extends AccessibleObject {
+public class Field<T> extends AccessibleObject implements Member {
   private static final int VoidField = 0;
   private static final int ByteField = 1;
   private static final int CharField = 2;
@@ -51,19 +51,23 @@ public class Field<T> extends AccessibleObject {
   public int getModifiers() {
     return vmField.flags;
   }
+  
+  public boolean isSynthetic() {
+    return (vmField.flags & ACC_SYNTHETIC) != 0;
+  }
 
   public String getName() {
     return getName(vmField);
   }
 
   public static String getName(VMField vmField) {
-    return new String(vmField.name, 0, vmField.name.length - 1, false);
+    return Classes.makeString(vmField.name, 0, vmField.name.length - 1);
   }
 
   public Class getType() {
     return Classes.forCanonicalName
       (vmField.class_.loader,
-       new String(vmField.spec, 0, vmField.spec.length - 1, false));
+       Classes.makeString(vmField.spec, 0, vmField.spec.length - 1));
   }
 
   public Type getGenericType() {
@@ -71,7 +75,7 @@ public class Field<T> extends AccessibleObject {
       return getType();
     }
     String signature = Classes.toString((byte[]) vmField.addendum.signature);
-    return SignatureParser.parse(vmField.class_.loader, signature);
+    return SignatureParser.parse(vmField.class_.loader, signature, getDeclaringClass());
   }
 
   public Object get(Object instance) throws IllegalAccessException {

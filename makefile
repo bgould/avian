@@ -7,12 +7,13 @@ build-arch := $(shell uname -m \
 	| sed 's/^i.86$$/i386/' \
 	| sed 's/^x86pc$$/i386/' \
 	| sed 's/amd64/x86_64/' \
-	| sed 's/^arm.*$$/arm/')
+	| sed 's/^arm.*$$/arm/' \
+	| sed 's/aarch64/arm64/')
 
 build-platform := \
 	$(shell uname -s | tr [:upper:] [:lower:] \
 		| sed \
-		  -e 's/^mingw32.*$$/mingw32/' \
+			-e 's/^mingw32.*$$/mingw32/' \
 			-e 's/^cygwin.*$$/cygwin/' \
 			-e 's/^darwin.*$$/macosx/')
 
@@ -62,12 +63,12 @@ ifeq ($(filter compile interpret,$(process)),)
 	x := $(error "'$(process)' is not a valid process (choose one of: compile interpret)")
 endif
 
-ifeq ($(filter x86_64 i386 arm,$(arch)),)
-	x := $(error "'$(arch)' is not a supported architecture (choose one of: x86_64 i386 arm)")
+ifeq ($(filter x86_64 i386 arm arm64,$(arch)),)
+	x := $(error "'$(arch)' is not a supported architecture (choose one of: x86_64 i386 arm arm64)")
 endif
 
 ifeq ($(platform),darwin)
-	x := $(error "please use 'platform=macosx' or 'platform=ios' instead of 'platform=$platform'")
+	x := $(error "please use 'platform=macosx' or 'platform=ios' instead of 'platform=$(platform)'")
 endif
 
 ifneq ($(ios),)
@@ -79,14 +80,14 @@ ifeq ($(filter linux windows macosx ios freebsd,$(platform)),)
 endif
 
 ifeq ($(platform),macosx)
-	ifeq ($(arch),arm)
-		x := $(error "please use 'arch=arm' 'platform=ios' to build for ios-arm")
+	ifneq ($(filter arm arm64,$(arch)),)
+		x := $(error "please use ('arch=arm' or 'arch=arm64') 'platform=ios' to build for ios-arm")
 	endif
 endif
 
 ifeq ($(platform),ios)
-	ifeq ($(filter arm i386,$(arch)),)
-		x := $(error "please specify 'arch=i386' or 'arch=arm' with 'platform=ios'")
+	ifeq ($(filter i386 arm arm64,$(arch)),)
+		x := $(error "please specify 'arch=i386', 'arch=arm', or 'arch=arm64' with 'platform=ios'")
 	endif
 endif
 
@@ -219,12 +220,14 @@ ifneq ($(android),)
 	classpath-cflags = -DBOOT_JAVAHOME
 	android-cflags = -I$(luni-native) \
 		-I$(android)/libnativehelper/include/nativehelper \
+		-I$(android)/libnativehelper \
 		-I$(android)/system/core/include \
 		-I$(android)/external/zlib \
 		-I$(android)/external/icu4c/i18n \
 		-I$(android)/external/icu4c/common \
 		-I$(android)/external/expat \
 		-I$(android)/external/openssl/include \
+		-I$(android)/external/openssl \
 		-I$(android)/libcore/include \
 		-I$(build)/android-src/external/fdlibm \
 		-I$(build)/android-src \
@@ -234,33 +237,46 @@ ifneq ($(android),)
 		-DJNI_JARJAR_PREFIX= \
 		-D__DARWIN_UNIX03=1 \
 		-D__PROVIDE_FIXMES \
+		-DSTATIC_LIB \
 		-g3 \
-		-Werror
+		-Werror \
+		-Wno-shift-count-overflow
+
+	# on Windows (in MinGW-based build) there are neither __BEGIN_DECLS nor __END_DECLS
+	# defines; we don't want to patch every file that uses them, so we stub them in
+	# using CFLAGS mechanism
+	# Also we have off64_t defined in mingw-w64 headers, so let's tell that
+	ifeq ($(platform),windows)
+		android-cflags += "-D__BEGIN_DECLS=extern \"C\" {" "-D__END_DECLS=}" "-DHAVE_OFF64_T"
+	endif
 
 	luni-cpps := $(shell find $(luni-native) -name '*.cpp')
+
+	libziparchive-native := $(android)/system/core/libziparchive
+	libziparchive-ccs := $(libziparchive-native)/zip_archive.cc
+
+	libutils-native := $(android)/system/core/libutils
+	libutils-cpps := $(libutils-native)/FileMap.cpp
 
 	libnativehelper-native := $(android)/libnativehelper
 	libnativehelper-cpps := $(libnativehelper-native)/JniConstants.cpp \
 		$(libnativehelper-native)/toStringArray.cpp
 
-	crypto-native := $(android)/libcore/crypto/src/main/native
-
+	crypto-native := $(android)/external/conscrypt/src/main/native
 	crypto-cpps := $(crypto-native)/org_conscrypt_NativeCrypto.cpp
 
 	ifeq ($(platform),windows)
-		android-cflags += -D__STDC_CONSTANT_MACROS
+		android-cflags += -D__STDC_CONSTANT_MACROS -DHAVE_WIN32_FILEMAP -D__STDC_FORMAT_MACROS
 		blacklist = $(luni-native)/java_io_Console.cpp \
-			$(luni-native)/java_lang_ProcessManager.cpp \
-			$(luni-native)/java_math_NativeBN.cpp \
-			$(luni-native)/libcore_net_RawSocket.cpp
+			$(luni-native)/java_lang_ProcessManager.cpp
 
-		icu-libs := $(android)/external/icu4c/lib/sicuin.a \
-			$(android)/external/icu4c/lib/sicuuc.a \
+		icu-libs := $(android)/external/icu4c/lib/libsicuin.a \
+			$(android)/external/icu4c/lib/libsicuuc.a \
 			$(android)/external/icu4c/lib/sicudt.a
 		platform-lflags := -lgdi32 -lshlwapi -lwsock32
 	else
-		android-cflags += -fPIC -DHAVE_SYS_UIO_H
-		blacklist = $(luni-native)/java_math_NativeBN.cpp
+		android-cflags += -fPIC -DHAVE_SYS_UIO_H -DHAVE_POSIX_FILEMAP
+		blacklist =
 
 		icu-libs := $(android)/external/icu4c/lib/libicui18n.a \
 			$(android)/external/icu4c/lib/libicuuc.a \
@@ -278,30 +294,61 @@ ifneq ($(android),)
 		-lstdc++
 
 	ifeq ($(platform),linux)
+		android-cflags += -DHAVE_OFF64_T
 		classpath-lflags += -lrt
 	endif
 
 	classpath-objects = \
 		$(call cpp-objects,$(luni-cpps),$(luni-native),$(build)) \
 		$(call cpp-objects,$(crypto-cpps),$(crypto-native),$(build)) \
-		$(call cpp-objects,$(libnativehelper-cpps),$(libnativehelper-native),$(build))
+		$(call cpp-objects,$(libnativehelper-cpps),$(libnativehelper-native),$(build)) \
+		$(call cc-objects,$(libziparchive-ccs),$(libziparchive-native),$(build)) \
+		$(call cpp-objects,$(libutils-cpps),$(libutils-native),$(build))
 	luni-java = $(android)/libcore/luni/src/main/java
-	luni-javas := $(shell find $(luni-java) -name '*.java')
+
+	luni-blacklist = \
+		$(luni-java)/libcore/reflect/AnnotationAccess.java
+
+	luni-javas := \
+		$(filter-out $(luni-blacklist),$(shell find $(luni-java) -name '*.java'))
+
 	luni-nonjavas := $(shell find $(luni-java) -not -type d -not -name '*.java')
 	luni-copied-nonjavas = $(call noop-files,$(luni-nonjavas),$(luni-java),)
-	libdvm-java = $(android)/libcore/libdvm/src/main/java
-	libdvm-javas := $(shell find $(libdvm-java) -name '*.java')
-	crypto-java = $(android)/libcore/crypto/src/main/java
+
+	crypto-java = $(android)/external/conscrypt/src/main/java
 	crypto-javas := $(shell find $(crypto-java) -name '*.java')
+
+	crypto-platform-java = $(android)/external/conscrypt/src/platform/java
+	crypto-platform-javas := $(shell find $(crypto-platform-java) -name '*.java')
+
 	dalvik-java = $(android)/libcore/dalvik/src/main/java
-	dalvik-javas := $(shell find $(dalvik-java) -name '*.java')
+	dalvik-javas := \
+		$(dalvik-java)/dalvik/system/DalvikLogHandler.java \
+		$(dalvik-java)/dalvik/system/CloseGuard.java \
+		$(dalvik-java)/dalvik/system/VMDebug.java \
+		$(dalvik-java)/dalvik/system/BlockGuard.java \
+		$(dalvik-java)/dalvik/system/SocketTagger.java \
+		$(dalvik-java)/dalvik/system/DalvikLogging.java \
+
+	libart-java = $(android)/libcore/libart/src/main/java
+	libart-javas := \
+		$(libart-java)/dalvik/system/VMRuntime.java \
+		$(libart-java)/dalvik/system/VMStack.java \
+		$(libart-java)/java/lang/Thread.java \
+		$(libart-java)/java/lang/ThreadGroup.java \
+		$(libart-java)/java/lang/Enum.java \
+		$(libart-java)/java/lang/String.java \
+		$(libart-java)/java/lang/ref/Reference.java \
+		$(libart-java)/java/lang/reflect/AccessibleObject.java \
+
 	xml-java = $(android)/libcore/xml/src/main/java
 	xml-javas := $(shell find $(xml-java) -name '*.java')
 	android-classes = \
 		$(call java-classes,$(luni-javas),$(luni-java),$(build)/android) \
-		$(call java-classes,$(libdvm-javas),$(libdvm-java),$(build)/android) \
 		$(call java-classes,$(crypto-javas),$(crypto-java),$(build)/android) \
+		$(call java-classes,$(crypto-platform-javas),$(crypto-platform-java),$(build)/android) \
 		$(call java-classes,$(dalvik-javas),$(dalvik-java),$(build)/android) \
+		$(call java-classes,$(libart-javas),$(libart-java),$(build)/android) \
 		$(call java-classes,$(xml-javas),$(xml-java),$(build)/android)
 	classpath = android
 
@@ -408,15 +455,15 @@ cflags = $(build-cflags)
 common-lflags = -lm -lz
 
 ifeq ($(use-clang),true)
-  ifeq ($(build-kernel),darwin)
-    common-lflags += -Wl,-export_dynamic
-  else
-    ifneq ($(platform),windows)
-      common-lflags += -Wl,-E
-    else
-      common-lflags += -Wl,--export-all-symbols
-    endif
-  endif
+	ifeq ($(build-kernel),darwin)
+		common-lflags += -Wl,-export_dynamic
+	else
+		ifneq ($(platform),windows)
+			common-lflags += -Wl,-E
+		else
+			common-lflags += -Wl,--export-all-symbols
+		endif
+	endif
 endif
 
 build-lflags = -lz -lpthread -ldl
@@ -474,30 +521,39 @@ codeimage-symbols = _binary_codeimage_bin_start:_binary_codeimage_bin_end
 developer-dir := $(shell if test -d /Developer/Platforms/$(target).platform/Developer/SDKs; then echo /Developer; \
 	else echo /Applications/Xcode.app/Contents/Developer; fi)
 
-ifeq ($(arch),i386)
+ifneq (,$(filter i386 arm,$(arch)))
 	pointer-size = 4
 endif
 
-ifeq ($(arch),arm)
+ifneq (,$(filter arm arm64,$(arch)))
 	asm = arm
-	pointer-size = 4
 
 	ifneq ($(platform),ios)
-		no-psabi = -Wno-psabi
-		cflags += -marm $(no-psabi)
+		ifneq ($(arch),arm64)
+			no-psabi = -Wno-psabi
+			cflags += -marm $(no-psabi)
 
-		# By default, assume we can't use armv7-specific instructions on
-		# non-iOS platforms.  Ideally, we'd detect this at runtime.
-		armv6=true
+			# By default, assume we can't use armv7-specific instructions on
+			# non-iOS platforms.  Ideally, we'd detect this at runtime.
+			armv6=true
+		endif
 	endif
 
 	ifneq ($(arch),$(build-arch))
 		ifneq ($(kernel),darwin)
-			cxx = arm-linux-gnueabi-g++
-			cc = arm-linux-gnueabi-gcc
-			ar = arm-linux-gnueabi-ar
-			ranlib = arm-linux-gnueabi-ranlib
-			strip = arm-linux-gnueabi-strip
+			ifeq ($(arch),arm64)
+				cxx = aarch64-linux-gnu-g++
+				cc = aarch64-linux-gnu-gcc
+				ar = aarch64-linux-gnu-ar
+				ranlib = aarch64-linux-gnu-ranlib
+				strip = aarch64-linux-gnu-strip
+			else
+				cxx = arm-linux-gnueabi-g++
+				cc = arm-linux-gnueabi-gcc
+				ar = arm-linux-gnueabi-ar
+				ranlib = arm-linux-gnueabi-ranlib
+				strip = arm-linux-gnueabi-strip
+			endif
 		endif
 	endif
 endif
@@ -636,7 +692,7 @@ ifeq ($(kernel),darwin)
 		sdk-dir = $(platform-dir)/Developer/SDKs
 
 		mac-version := $(shell \
-			  if test -d $(sdk-dir)/MacOSX10.9.sdk; then echo 10.9; \
+				if test -d $(sdk-dir)/MacOSX10.9.sdk; then echo 10.9; \
 			elif test -d $(sdk-dir)/MacOSX10.8.sdk; then echo 10.8; \
 			elif test -d $(sdk-dir)/MacOSX10.7.sdk; then echo 10.7; \
 			elif test -d $(sdk-dir)/MacOSX10.6.sdk; then echo 10.6; \
@@ -675,7 +731,11 @@ ifeq ($(kernel),darwin)
 		else
 			target = iPhoneOS
 			sdk = iphoneos$(ios-version)
-			arch-flag = -arch armv7
+			ifeq ($(arch),arm)
+				arch-flag = -arch armv7
+			else
+				arch-flag = -arch arm64
+			endif
 			release = Release-iphoneos
 		endif
 
@@ -683,7 +743,9 @@ ifeq ($(kernel),darwin)
 		sdk-dir = $(platform-dir)/Developer/SDKs
 
 		ios-version := $(shell \
-			  if test -d $(sdk-dir)/$(target)7.1.sdk; then echo 7.1; \
+				if test -d $(sdk-dir)/$(target)8.1.sdk; then echo 8.1; \
+			elif test -d $(sdk-dir)/$(target)8.0.sdk; then echo 8.0; \
+			elif test -d $(sdk-dir)/$(target)7.1.sdk; then echo 7.1; \
 			elif test -d $(sdk-dir)/$(target)7.0.sdk; then echo 7.0; \
 			elif test -d $(sdk-dir)/$(target)6.1.sdk; then echo 6.1; \
 			elif test -d $(sdk-dir)/$(target)6.0.sdk; then echo 6.0; \
@@ -767,7 +829,7 @@ ifeq ($(platform),windows)
 	rpath =
 
 	lflags = -L$(lib) $(common-lflags) -lws2_32 -liphlpapi -mconsole
-	cflags = -I$(inc) $(common-cflags) -DWINVER=0x0500
+	cflags = -I$(inc) $(common-cflags) -DWINVER=0x0500 -U__STRICT_ANSI__
 
 	ifeq (,$(filter mingw32 cygwin,$(build-platform)))
 		openjdk-extra-cflags += -I$(src)/openjdk/caseSensitive
@@ -775,7 +837,7 @@ ifeq ($(platform),windows)
 			&& echo i686-w64-mingw32- || echo x86_64-w64-mingw32-)
 		cxx = $(prefix)g++ -m32
 		cc = $(prefix)gcc -m32
-		dlltool = $(prefix)dlltool -mi386 --as-flags=--32 
+		dlltool = $(prefix)dlltool -mi386 --as-flags=--32
 		ar = $(prefix)ar
 		ranlib = $(prefix)ranlib
 		strip = $(prefix)strip --strip-all
@@ -783,7 +845,8 @@ ifeq ($(platform),windows)
 		build-system = windows
 		static-on-windows = -static
 		common-cflags += "-I$(JAVA_HOME)/include/win32"
-		build-cflags = $(common-cflags) -I$(src) -I$(inc) -mthreads
+		build-cflags = $(common-cflags) -I$(src) -I$(inc) -mthreads \
+			-D_WIN32_WINNT=0x0500
 		openjdk-extra-cflags =
 		build-lflags = -L$(lib) $(common-lflags)
 		ifeq ($(build-platform),cygwin)
@@ -1113,6 +1176,7 @@ endif
 
 c-objects = $(foreach x,$(1),$(patsubst $(2)/%.c,$(3)/%.o,$(x)))
 cpp-objects = $(foreach x,$(1),$(patsubst $(2)/%.cpp,$(3)/%.o,$(x)))
+cc-objects = $(foreach x,$(1),$(patsubst $(2)/%.cc,$(3)/%.o,$(x)))
 asm-objects = $(foreach x,$(1),$(patsubst $(2)/%.$(asm-format),$(3)/%-asm.o,$(x)))
 java-classes = $(foreach x,$(1),$(patsubst $(2)/%.java,$(3)/%.class,$(x)))
 noop-files = $(foreach x,$(1),$(patsubst $(2)/%,$(3)/%,$(x)))
@@ -1159,7 +1223,6 @@ compiler-sources = \
 	$(src)/codegen/compiler.cpp \
 	$(wildcard $(src)/codegen/compiler/*.cpp) \
 	$(src)/debug-util.cpp \
-	$(src)/codegen/registers.cpp \
 	$(src)/codegen/runtime.cpp \
 	$(src)/codegen/targets.cpp \
 	$(src)/util/fixed-allocator.cpp
@@ -1185,7 +1248,7 @@ ifeq ($(process),compile)
 		vm-sources += $(native-assembler-sources)
 	endif
 	ifeq ($(codegen-targets),all)
-		ifeq ($(arch),arm)
+		ifneq (,$(filter arm arm64,$(arch)))
 			# The x86 jit has a dependency on the x86 assembly code,
 			# and thus can't be successfully built on non-x86 platforms.
 			vm-sources += $(native-assembler-sources)
@@ -1206,7 +1269,7 @@ all-codegen-target-objects = $(call cpp-objects,$(all-codegen-target-sources),$(
 vm-asm-objects = $(call asm-objects,$(vm-asm-sources),$(src),$(build))
 vm-objects = $(vm-cpp-objects) $(vm-asm-objects)
 
-heapwalk-sources = $(src)/heapwalk.cpp 
+heapwalk-sources = $(src)/heapwalk.cpp
 heapwalk-objects = \
 	$(call cpp-objects,$(heapwalk-sources),$(src),$(build))
 
@@ -1383,13 +1446,23 @@ ifneq ($(classpath),avian)
 
 	ifeq ($(openjdk),)
 		classpath-sources := $(classpath-sources) \
+			$(classpath-src)/dalvik/system/BaseDexClassLoader.java \
+			$(classpath-src)/libcore/reflect/AnnotationAccess.java \
 			$(classpath-src)/sun/reflect/ConstantPool.java \
-			$(classpath-src)/java/lang/ReflectiveOperationException.java \
 			$(classpath-src)/java/net/ProtocolFamily.java \
 			$(classpath-src)/java/net/StandardProtocolFamily.java \
 			$(classpath-src)/sun/misc/Cleaner.java \
 			$(classpath-src)/sun/misc/Unsafe.java \
-			$(classpath-src)/java/lang/reflect/Proxy.java
+			$(classpath-src)/java/lang/Object.java \
+			$(classpath-src)/java/lang/Class.java \
+			$(classpath-src)/java/lang/ClassLoader.java \
+			$(classpath-src)/java/lang/Package.java \
+			$(classpath-src)/java/lang/reflect/Proxy.java \
+			$(classpath-src)/java/lang/reflect/Field.java \
+			$(classpath-src)/java/lang/reflect/SignatureParser.java \
+			$(classpath-src)/java/lang/reflect/Constructor.java \
+			$(classpath-src)/java/lang/reflect/AccessibleObject.java \
+			$(classpath-src)/java/lang/reflect/Method.java
 	endif
 else
 	classpath-sources := $(shell find $(classpath-src) -name '*.java')
@@ -1450,6 +1523,10 @@ endif
 
 ifeq ($(target-arch),arm)
 	cflags += -DAVIAN_TARGET_ARCH=AVIAN_ARCH_ARM
+endif
+
+ifeq ($(target-arch),arm64)
+	cflags += -DAVIAN_TARGET_ARCH=AVIAN_ARCH_ARM64
 endif
 
 ifeq ($(target-format),elf)
@@ -1580,7 +1657,7 @@ $(classpath-dep): $(classpath-sources) $(classpath-jar-dep)
 	classes="$(shell $(MAKE) -s --no-print-directory build=$(build) \
 		$(classpath-classes))"; if [ -n "$${classes}" ]; then \
 		$(javac) -source 1.6 -target 1.6 \
-		  -d $(classpath-build) -bootclasspath $(boot-classpath) \
+			-d $(classpath-build) -bootclasspath $(boot-classpath) \
 		$${classes}; fi
 	@touch $(@)
 
@@ -1593,14 +1670,20 @@ $(build)/android-src/%.cpp: $(libnativehelper-native)/%.cpp
 $(build)/android-src/%.cpp: $(crypto-native)/%.cpp
 	cp $(<) $(@)
 
+$(build)/android-src/%.cpp: $(libziparchive-native)/%.cc
+	cp $(<) $(@)
+
+$(build)/android-src/%.cpp: $(libutils-native)/%.cpp
+	cp $(<) $(@)
+
 $(build)/%.o: $(build)/android-src/%.cpp $(build)/android.dep
 	@echo "compiling $(@)"
 	@mkdir -p $(dir $(@))
 	$(cxx) $(android-cflags) $(classpath-extra-cflags) -c \
 		$$($(windows-path) $(<)) $(call output,$(@))
 
-$(build)/android.dep: $(luni-javas) $(libdvm-javas) $(crypto-javas) \
-		$(dalvik-javas) $(xml-javas) $(luni-nonjavas)
+$(build)/android.dep: $(luni-javas) $(dalvik-javas) $(libart-javas) \
+		$(xml-javas) $(luni-nonjavas) $(crypto-javas) $(crypto-platform-javas)
 	@echo "compiling luni classes"
 	@mkdir -p $(classpath-build)
 	@mkdir -p $(build)/android
@@ -1608,11 +1691,26 @@ $(build)/android.dep: $(luni-javas) $(libdvm-javas) $(crypto-javas) \
 	@mkdir -p $(build)/android-src/libexpat
 	cp $(android)/external/fdlibm/fdlibm.h $(build)/android-src/external/fdlibm/
 	cp $(android)/external/expat/lib/expat*.h $(build)/android-src/libexpat/
-	cp -a $(luni-java)/* $(libdvm-java)/* $(crypto-java)/* $(dalvik-java)/* \
-		$(xml-java)/* $(build)/android-src/
+	cp -a $(luni-java)/* $(xml-java)/* $(build)/android-src/
+	rm $(call noop-files,$(luni-blacklist),$(luni-java),$(build)/android-src)
+	(cd $(dalvik-java) && \
+			$(jar) c $(call noop-files,$(dalvik-javas),$(dalvik-java),.)) \
+		| (cd $(build)/android-src && $(jar) x)
+	(cd $(libart-java) && \
+			$(jar) c $(call noop-files,$(libart-javas),$(libart-java),.)) \
+		| (cd $(build)/android-src && $(jar) x)
+	(cd $(crypto-java) && \
+			$(jar) c $(call noop-files,$(crypto-javas),$(crypto-java),.)) \
+		| (cd $(build)/android-src && $(jar) x)
+	(cd $(crypto-platform-java) && \
+			$(jar) c $(call noop-files,$(crypto-platform-javas),$(crypto-platform-java),.)) \
+		| (cd $(build)/android-src && $(jar) x)
+	(cd $(classpath-src) && \
+			$(jar) c $(call noop-files,$(classpath-sources),$(classpath-src),.)) \
+		| (cd $(build)/android-src && $(jar) x)
+#	(cd android && $(jar) c *)	| (cd $(build)/android-src && $(jar) x)
 	find $(build)/android-src -name '*.java' > $(build)/android.txt
-	$(javac) -Xmaxerrs 1000 -d $(build)/android -sourcepath $(luni-java) \
-		@$(build)/android.txt
+	$(javac) -Xmaxerrs 1000 -d $(build)/android @$(build)/android.txt
 	rm $(build)/android/sun/misc/Unsafe* \
 		$(build)/android/java/lang/reflect/Proxy*
 	for x in $(luni-copied-nonjavas); \
@@ -1623,7 +1721,7 @@ $(build)/android.dep: $(luni-javas) $(libdvm-javas) $(crypto-javas) \
 		$(build)/android/java/security/security.properties
 	chmod +w $(build)/android/java/security/security.properties
 	cp -r $(build)/android/* $(classpath-build)
-	@touch $(@)	
+	@touch $(@)
 
 $(test-build)/%.class: $(test)/%.java
 	@echo $(<)
@@ -1634,7 +1732,7 @@ $(test-dep): $(test-sources) $(test-library)
 	files="$(shell $(MAKE) -s --no-print-directory build=$(build) $(test-classes))"; \
 	if test -n "$${files}"; then \
 		$(javac) -source 1.6 -target 1.6 \
-		  -classpath $(test-build) -d $(test-build) -bootclasspath $(boot-classpath) $${files}; \
+			-classpath $(test-build) -d $(test-build) -bootclasspath $(boot-classpath) $${files}; \
 	fi
 	$(javac) -source 1.2 -target 1.1 -XDjsrlimit=0 -d $(test-build) \
 		-bootclasspath $(boot-classpath) test/Subroutine.java
@@ -1646,7 +1744,7 @@ $(test-extra-dep): $(test-extra-sources)
 	files="$(shell $(MAKE) -s --no-print-directory build=$(build) $(test-extra-classes))"; \
 	if test -n "$${files}"; then \
 		$(javac) -source 1.6 -target 1.6 \
-		  -d $(test-build) -bootclasspath $(boot-classpath) $${files}; \
+			-d $(test-build) -bootclasspath $(boot-classpath) $${files}; \
 	fi
 	@touch $(@)
 
@@ -1728,7 +1826,7 @@ ifdef mt
 endif
 else
 	$(dlltool) -z $(addsuffix .def,$(basename $(@))) $(^)
-	$(dlltool) -d $(addsuffix .def,$(basename $(@))) -e $(addsuffix .exp,$(basename $(@))) 
+	$(dlltool) -d $(addsuffix .def,$(basename $(@))) -e $(addsuffix .exp,$(basename $(@)))
 	$(ld) $(addsuffix .exp,$(basename $(@))) $(^) \
 		$(lflags) $(bootimage-lflags) -o $(@)
 endif
@@ -1826,7 +1924,7 @@ $(build)/%-build.o: $(lzma)/C/%.c
 	$(build-cc) -DPOINTER_SIZE=$(pointer-size) -O0 -g3 $(lzma-build-cflags) \
 		-c $(<) -o $(@)
 
-$(jni-objects): $(build)/%.o: $(classpath-src)/%.cpp
+$(jni-objects): $(build)/%.o: $(classpath-src)/%.cpp $(vm-depends)
 	$(compile-object)
 
 $(static-library): $(vm-objects) $(classpath-objects) $(vm-heapwalk-objects) \
