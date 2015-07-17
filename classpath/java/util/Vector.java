@@ -111,6 +111,32 @@ public class Vector<T> extends AbstractList<T> implements java.io.Serializable, 
     }
   }
 
+  public synchronized void setSize(final int newSize) {
+    int size = size();
+    if (newSize == size) {
+      return;
+    }
+    if (newSize > size) {
+      while (newSize > size++) {
+        add(null);
+      }
+      return;
+    } else {
+      while (newSize < size--) {
+        remove(size - 1);
+      }
+      return;
+    }
+  }
+
+  public synchronized T lastElement() {
+    final int size = size();
+    if (size > 0) {
+      return get(size - 1);
+    }
+    throw new NoSuchElementException();
+  }
+
   public Iterator<T> iterator() {
     return listIterator();
   }

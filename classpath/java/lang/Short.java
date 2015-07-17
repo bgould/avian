@@ -38,6 +38,14 @@ public final class Short extends Number implements Comparable<Short> {
     return value;
   }
 
+  public static short parseShort(String s) {
+    return parseShort(s, 10);
+  }
+
+  public static short parseShort(String s, int radix) {
+    return (short) Long.parseLong(s, radix);
+  }
+
   public String toString() {
     return toString(value);
   }
