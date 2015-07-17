@@ -84,6 +84,14 @@ public final class String
     this(s.toCharArray());
   }
 
+  public String(StringBuilder s) {
+    this(s.toString());
+  }
+
+  public String(StringBuffer s) {
+    this(s.toString());
+  }
+
   public String(byte[] data, String charset)
     throws UnsupportedEncodingException
   {

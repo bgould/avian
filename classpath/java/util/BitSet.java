@@ -49,6 +49,15 @@ public class BitSet implements Serializable, Cloneable {
     enlarge(1);
   }
 
+  private BitSet(BitSet otherBits) {
+    this.bits = new long[otherBits.bits.length];
+    System.arraycopy(otherBits.bits, 0, this.bits, 0, otherBits.bits.length);
+  }
+
+  public BitSet clone() {
+    return new BitSet(this);
+  }
+
   public void and(BitSet otherBits) {
     int min = Math.min(bits.length, otherBits.bits.length);
     for (int i = 0; i < min; i++) {

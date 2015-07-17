@@ -10,7 +10,7 @@
 
 package java.util;
 
-public class Hashtable<K, V> implements Map<K, V> {
+public class Hashtable<K, V> implements Map<K, V>, Cloneable {
   private final HashMap<K, V> map;
 
   public Hashtable(int capacity) {
@@ -26,6 +26,10 @@ public class Hashtable<K, V> implements Map<K, V> {
     for (Entry<? extends K, ? extends V> entry : m.entrySet()) {
       put(entry.getKey(), entry.getValue());
     }
+  }
+
+  public synchronized Object clone() {
+    return new Hashtable<K,V>(this);
   }
 
   public synchronized String toString() {
