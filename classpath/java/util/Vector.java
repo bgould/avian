@@ -123,7 +123,7 @@ public class Vector<T> extends AbstractList<T> implements java.io.Serializable, 
       return;
     } else {
       while (newSize < size--) {
-        remove(size - 1);
+        remove(size);
       }
       return;
     }

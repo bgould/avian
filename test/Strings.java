@@ -114,6 +114,18 @@ public class Strings {
     expect("\0078".matches("\\078"));
   }
 
+  public static void testStringBuffers() {
+
+    final StringBuffer buffer = new StringBuffer("snafflegorp");
+    final String bufferString = new String(buffer);
+    equal("snafflegorp", bufferString);
+
+    final StringBuilder builder = new StringBuilder("grafflesnop");
+    final String builderString = new String(builder);
+    equal("grafflesnop", builderString);
+
+  }
+
   public static void main(String[] args) throws Exception {
     expect(new String(new byte[] { 99, 111, 109, 46, 101, 99, 111, 118, 97,
                                    116, 101, 46, 110, 97, 116, 46, 98, 117,

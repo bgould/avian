@@ -28,7 +28,7 @@ public class Hashtable<K, V> implements Map<K, V>, Cloneable {
     }
   }
 
-  public synchronized Object clone() {
+  public synchronized Hashtable<K,V> clone() {
     return new Hashtable<K,V>(this);
   }
 
