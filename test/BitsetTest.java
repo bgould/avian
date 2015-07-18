@@ -54,6 +54,25 @@ public class BitsetTest {
     //should force us to have 3 partitions.
     expandingSet.set(128);
   }
+
+  private static void testClone() {
+    
+    final BitSet bits = new BitSet();
+    bits.set(10);
+    bits.set(20);
+    bits.set(30);
+    bits.set(40);
+
+    final BitSet copy = new BitSet();
+    assertTrue(bits.equals(copy));
+    for (int i = 0; i < 50; i++) {
+      assertTrue((i % 10 == 0) ? copy.get(i) : !copy.get(i));
+    }
+
+    copy.set(50);
+    assertTrue(!(bits.equals(copy)));
+  
+  }
   
   private static void testFlip() {
     /* simple case */
@@ -103,6 +122,10 @@ public class BitsetTest {
       assertTrue("bit " + i + " should be set", bitset.get(i));
     }
     assertTrue("bit 65 should not be set", !bitset.get(65));
+  }
+
+  static void assertTrue(boolean flag) {
+    if (!flag) throw new RuntimeException();
   }
   
   static void assertTrue(String msg, boolean flag) {
