@@ -1641,7 +1641,7 @@ endif
 ifneq ($(supports_avian_executable),false)
 build: $(static-library) $(executable) $(dynamic-library) $(lzma-library) \
 	$(lzma-encoder) $(executable-dynamic) $(classpath-dep) $(test-dep) \
-	$(test-extra-dep) $(embed) $(build)/classpath.jar $(eclipse-exec-env)
+	$(test-extra-dep) $(embed) $(build)/classpath.jar
 else
 build: $(static-library) $(dynamic-library) $(lzma-library) \
 	$(lzma-encoder) $(classpath-dep) $(test-dep) \
@@ -1704,32 +1704,32 @@ clean:
 
 .PHONY: eclipse-ee
 ifneq ($(strip $(eclipse-exec-env)),)
-eclipse-ee: $(eclipse-ee-file) $(eclipse-lib-dir)/rt.jar $(eclipse-bin-dir)/java${exe-suffix} $(eclipse-src-dir)
 
-$(eclipse-bin-dir):
-	@mkdir -p $(@)
+eclipse-ee: $(eclipse-ee-file) \
+	$(eclipse-lib-dir)/rt.jar \
+	$(eclipse-bin-dir)/java${exe-suffix} \
+	$(eclipse-src-dir)
 
-$(eclipse-lib-dir):
-	@mkdir -p $(@)
-
-$(eclipse-jdk-dir):
-	@mkdir -p $(@)
-
-$(eclipse-ee-file): $(eclipse-jdk-dir)
+$(eclipse-ee-file):
 	@echo "writing eclipse execution environment descriptor to $(@)"
+	@mkdir -p $(eclipse-jdk-dir)
 	@printf '${eclipse-ee-descriptor}' > $(@)
 
 $(eclipse-src-dir): $(eclipse-jdk-dir)
 	@echo "symlinking classpath for $(@)"
+	@mkdir -p $(eclipse-jdk-dir)
 	@ln -sf ../../../../classpath $(@)
 
-$(eclipse-bin-dir)/java$(exe-suffix): $(eclipse-bin-dir) $(executable)
+$(eclipse-bin-dir)/java$(exe-suffix):
 	@echo "symlinking $(executable) for $(@)"
+	@mkdir -p $(eclipse-bin-dir)
 	@ln -sf ../../../$(name)${exe-suffix} $(@)
 
-$(eclipse-lib-dir)/rt.jar: $(eclipse-lib-dir) $(build)/classpath.jar
+$(eclipse-lib-dir)/rt.jar:
 	@echo "symlinking $(build)/classpath.jar for $(@)"
+	@mkdir -p $(eclipse-lib-dir)
 	@ln -sf ../../../../classpath.jar $(@)
+
 else
 eclipse-ee:
 	$(error "Eclipse execution environment for platform '$(platform)' is not supported")
